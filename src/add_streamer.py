@@ -13,6 +13,7 @@ import sqlite3
 import sys
 
 from streamer_tables import table_name_for_group
+from time_utils import now_db_time
 
 
 DEFAULT_DATABASE = "streamer_config.db"
@@ -39,6 +40,7 @@ def add_streamer(
 ) -> str:
     table_name = table_name_for_group(group_name)
     with sqlite3.connect(database) as conn:
+        current_time = now_db_time()
         exists = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
             (table_name,),
@@ -58,9 +60,10 @@ def add_streamer(
                 enabled,
                 display_order,
                 note,
+                created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(vtuber_id) DO UPDATE SET
                 name = excluded.name,
                 youtube_url = excluded.youtube_url,
@@ -70,7 +73,7 @@ def add_streamer(
                 enabled = excluded.enabled,
                 display_order = excluded.display_order,
                 note = excluded.note,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = excluded.updated_at
             """,
             (
                 vtuber_id,
@@ -82,6 +85,8 @@ def add_streamer(
                 enabled,
                 display_order,
                 note,
+                current_time,
+                current_time,
             ),
         )
 

@@ -4,18 +4,22 @@ import json
 import sqlite3
 from typing import Any
 
+from time_utils import now_db_time
+
 
 def start_job(conn: sqlite3.Connection, job_name: str, platform: str | None = None) -> int:
+    current_time = now_db_time()
     cursor = conn.execute(
         """
         INSERT INTO working (
             job_name,
             platform,
+            started_at,
             status
         )
-        VALUES (?, ?, 'running')
+        VALUES (?, ?, ?, 'running')
         """,
-        (job_name, platform),
+        (job_name, platform, current_time),
     )
     return int(cursor.lastrowid)
 
@@ -34,12 +38,13 @@ def finish_job(
     error_message: str | None = None,
     summary: dict[str, Any] | None = None,
 ) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         UPDATE working
         SET
             status = ?,
-            finished_at = CURRENT_TIMESTAMP,
+            finished_at = ?,
             elapsed_seconds = ?,
             checked_count = ?,
             live_count = ?,
@@ -52,6 +57,7 @@ def finish_job(
         """,
         (
             status,
+            current_time,
             elapsed_seconds,
             checked_count,
             live_count,

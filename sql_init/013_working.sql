@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS working (
     job_name TEXT NOT NULL,
     platform TEXT,
     status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial_success', 'failed')),
-    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     finished_at TEXT,
     elapsed_seconds REAL,
     checked_count INTEGER NOT NULL DEFAULT 0,

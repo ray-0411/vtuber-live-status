@@ -23,6 +23,16 @@
 
 後續可以依照實際穩定性、API 限制與 YouTube 抓取速度再調整。
 
+## 時區
+
+程式內所有寫入資料庫與顯示在本機排程輸出的時間，固定使用台北時間：
+
+```text
+Asia/Taipei
+```
+
+資料庫時間欄位使用 `YYYY-MM-DD HH:MM:SS` 格式。外部 API 回傳的 UTC 時間會先轉成台北時間再儲存。
+
 ## 本機每 5 分鐘執行
 
 如果 GitHub Actions 上的 YouTube 抓取受到限制，可以先在本機用長駐程式每 5 分鐘執行一次完整抓取。
@@ -193,8 +203,8 @@ CREATE TABLE streamer_group_name (
     enabled INTEGER NOT NULL DEFAULT 1,
     display_order INTEGER,
     note TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
 );
 ```
 
@@ -288,10 +298,10 @@ CREATE TABLE stream (
     tags TEXT,
     started_at TEXT,
     ended_at TEXT,
-    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    first_seen_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     UNIQUE (platform, platform_stream_id)
 );
 ```
@@ -336,7 +346,7 @@ CREATE TABLE stream_snapshot (
     vtuber_id TEXT NOT NULL,
     platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
     viewer_count INTEGER NOT NULL,
-    captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    captured_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     title TEXT,
     category TEXT,
     tags TEXT,
@@ -392,7 +402,7 @@ CREATE TABLE current_live_status (
     category TEXT,
     tags TEXT,
     started_at TEXT,
-    last_checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_checked_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     last_live_at TEXT,
     PRIMARY KEY (vtuber_id, platform),
     FOREIGN KEY (stream_id) REFERENCES stream(stream_id)
@@ -454,7 +464,7 @@ CREATE TABLE IF NOT EXISTS working (
     job_name TEXT NOT NULL,
     platform TEXT,
     status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial_success', 'failed')),
-    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     finished_at TEXT,
     elapsed_seconds REAL,
     checked_count INTEGER NOT NULL DEFAULT 0,

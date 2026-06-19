@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS stream (
     tags TEXT,
     started_at TEXT,
     ended_at TEXT,
-    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    first_seen_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     UNIQUE (platform, platform_stream_id)
 );

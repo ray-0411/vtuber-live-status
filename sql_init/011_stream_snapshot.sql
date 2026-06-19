@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS stream_snapshot (
     vtuber_id TEXT NOT NULL,
     platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
     viewer_count INTEGER NOT NULL,
-    captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    captured_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     title TEXT,
     category TEXT,
     tags TEXT,

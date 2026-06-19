@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS streamer_GROUP_NAME (
     enabled INTEGER NOT NULL DEFAULT 1,
     display_order INTEGER,
     note TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
 );

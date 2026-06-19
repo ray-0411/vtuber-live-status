@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from streamer_tables import Streamer, read_live_streamers
+from time_utils import iso_to_db_time, now_db_time
 from working_log import fail_job, finish_job, start_job
 
 
@@ -117,7 +118,7 @@ def fetch_twitch_streams(
                 user_name=item.get("user_name") or item["user_login"],
                 title=item.get("title") or "",
                 viewer_count=int(item.get("viewer_count") or 0),
-                started_at=item.get("started_at"),
+                started_at=iso_to_db_time(item.get("started_at")),
                 category=item.get("game_name") or item.get("game_id"),
                 tags=item.get("tags") or [],
             )
@@ -136,6 +137,7 @@ def get_twitch_streamers(conn: sqlite3.Connection) -> list[Streamer]:
 def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchStream) -> int:
     stream_url = f"https://www.twitch.tv/{stream.user_login}"
     tags_json = json.dumps(stream.tags, ensure_ascii=False)
+    current_time = now_db_time()
 
     conn.execute(
         """
@@ -148,18 +150,20 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchSt
             category,
             tags,
             started_at,
+            first_seen_at,
             last_seen_at,
+            created_at,
             updated_at
         )
-        VALUES (?, 'twitch', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, 'twitch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(platform, platform_stream_id) DO UPDATE SET
             stream_url = excluded.stream_url,
             title = excluded.title,
             category = excluded.category,
             tags = excluded.tags,
             started_at = excluded.started_at,
-            last_seen_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
+            last_seen_at = excluded.last_seen_at,
+            updated_at = excluded.updated_at
         """,
         (
             streamer.vtuber_id,
@@ -169,6 +173,10 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchSt
             stream.category,
             tags_json,
             stream.started_at,
+            current_time,
+            current_time,
+            current_time,
+            current_time,
         ),
     )
     row = conn.execute(
@@ -191,6 +199,7 @@ def insert_snapshot(
     streamer: Streamer,
     stream: TwitchStream,
 ) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO stream_snapshot (
@@ -198,16 +207,18 @@ def insert_snapshot(
             vtuber_id,
             platform,
             viewer_count,
+            captured_at,
             title,
             category,
             tags
         )
-        VALUES (?, ?, 'twitch', ?, ?, ?, ?)
+        VALUES (?, ?, 'twitch', ?, ?, ?, ?, ?)
         """,
         (
             stream_id,
             streamer.vtuber_id,
             stream.viewer_count,
+            current_time,
             stream.title,
             stream.category,
             json.dumps(stream.tags, ensure_ascii=False),
@@ -237,7 +248,7 @@ def update_live_status(
             last_checked_at,
             last_live_at
         )
-        VALUES (?, 'twitch', 1, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, 'twitch', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(vtuber_id, platform) DO UPDATE SET
             is_live = 1,
             stream_id = excluded.stream_id,
@@ -247,8 +258,8 @@ def update_live_status(
             category = excluded.category,
             tags = excluded.tags,
             started_at = excluded.started_at,
-            last_checked_at = CURRENT_TIMESTAMP,
-            last_live_at = CURRENT_TIMESTAMP
+            last_checked_at = excluded.last_checked_at,
+            last_live_at = excluded.last_live_at
         """,
         (
             streamer.vtuber_id,
@@ -259,11 +270,14 @@ def update_live_status(
             stream.category,
             json.dumps(stream.tags, ensure_ascii=False),
             stream.started_at,
+            current_time,
+            current_time,
         ),
     )
 
 
 def update_offline_status(conn: sqlite3.Connection, streamer: Streamer) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO current_live_status (
@@ -272,12 +286,12 @@ def update_offline_status(conn: sqlite3.Connection, streamer: Streamer) -> None:
             is_live,
             last_checked_at
         )
-        VALUES (?, 'twitch', 0, CURRENT_TIMESTAMP)
+        VALUES (?, 'twitch', 0, ?)
         ON CONFLICT(vtuber_id, platform) DO UPDATE SET
             is_live = 0,
-            last_checked_at = CURRENT_TIMESTAMP
+            last_checked_at = excluded.last_checked_at
         """,
-        (streamer.vtuber_id,),
+        (streamer.vtuber_id, current_time),
     )
 
 

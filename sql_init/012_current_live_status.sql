@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS current_live_status (
     category TEXT,
     tags TEXT,
     started_at TEXT,
-    last_checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_checked_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
     last_live_at TEXT,
     PRIMARY KEY (vtuber_id, platform),
     FOREIGN KEY (stream_id) REFERENCES stream(stream_id)

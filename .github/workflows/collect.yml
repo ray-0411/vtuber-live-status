@@ -29,12 +29,10 @@ jobs:
 
       - name: Show current time
         run: |
-          date -u
           python - <<'PY'
-          from datetime import datetime, timezone
+          from datetime import datetime
           from zoneinfo import ZoneInfo
 
-          print("UTC:", datetime.now(timezone.utc).isoformat())
           print("Asia/Taipei:", datetime.now(ZoneInfo("Asia/Taipei")).isoformat())
           PY
 

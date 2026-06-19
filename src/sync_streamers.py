@@ -13,6 +13,7 @@ import sqlite3
 import sys
 
 from streamer_tables import Streamer, read_streamers
+from time_utils import now_db_time
 
 
 DEFAULT_CONFIG_DATABASE = "streamer_config.db"
@@ -45,6 +46,7 @@ def sync_streamers(config_database: str, live_database: str) -> int:
         raise ValueError(f"Duplicate vtuber_id found: {details}")
 
     with sqlite3.connect(live_database) as live_conn:
+        current_time = now_db_time()
         live_conn.execute("DELETE FROM streamer")
         live_conn.executemany(
             """
@@ -61,7 +63,7 @@ def sync_streamers(config_database: str, live_database: str) -> int:
                 note,
                 synced_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -75,6 +77,7 @@ def sync_streamers(config_database: str, live_database: str) -> int:
                     streamer.enabled,
                     streamer.display_order,
                     streamer.note,
+                    current_time,
                 )
                 for streamer in streamers
             ],

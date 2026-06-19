@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS streamer (
     enabled INTEGER NOT NULL DEFAULT 1,
     display_order INTEGER,
     note TEXT,
-    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    synced_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
 );

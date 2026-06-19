@@ -21,6 +21,7 @@ from typing import Any
 import yt_dlp
 
 from streamer_tables import Streamer, read_live_streamers
+from time_utils import now_db_time, unix_to_db_time
 from working_log import fail_job, finish_job, start_job
 
 
@@ -115,15 +116,6 @@ def is_live_info(info: dict[str, Any]) -> bool:
     return info.get("is_live") is True or info.get("live_status") == "is_live"
 
 
-def unix_timestamp_to_iso(value: Any) -> str | None:
-    if not value:
-        return None
-    try:
-        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(value)))
-    except (TypeError, ValueError, OSError):
-        return None
-
-
 def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResult | None:
     ydl_opts = {
         "quiet": True,
@@ -171,11 +163,12 @@ def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResu
         stream_url=stream_url,
         title=info.get("title") or "",
         viewer_count=viewer_count,
-        started_at=unix_timestamp_to_iso(info.get("timestamp") or info.get("release_timestamp")),
+        started_at=unix_to_db_time(info.get("timestamp") or info.get("release_timestamp")),
     )
 
 
 def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiveResult) -> int:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO stream (
@@ -185,16 +178,18 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiv
             stream_url,
             title,
             started_at,
+            first_seen_at,
             last_seen_at,
+            created_at,
             updated_at
         )
-        VALUES (?, 'youtube', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, 'youtube', ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(platform, platform_stream_id) DO UPDATE SET
             stream_url = excluded.stream_url,
             title = excluded.title,
             started_at = excluded.started_at,
-            last_seen_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
+            last_seen_at = excluded.last_seen_at,
+            updated_at = excluded.updated_at
         """,
         (
             streamer.vtuber_id,
@@ -202,6 +197,10 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiv
             live.stream_url,
             live.title,
             live.started_at,
+            current_time,
+            current_time,
+            current_time,
+            current_time,
         ),
     )
     row = conn.execute(
@@ -227,6 +226,7 @@ def insert_snapshot(
     if live.viewer_count is None:
         return False
 
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO stream_snapshot (
@@ -234,14 +234,16 @@ def insert_snapshot(
             vtuber_id,
             platform,
             viewer_count,
+            captured_at,
             title
         )
-        VALUES (?, ?, 'youtube', ?, ?)
+        VALUES (?, ?, 'youtube', ?, ?, ?)
         """,
         (
             stream_id,
             streamer.vtuber_id,
             live.viewer_count,
+            current_time,
             live.title,
         ),
     )
@@ -254,6 +256,7 @@ def update_live_status(
     stream_id: int,
     live: YouTubeLiveResult,
 ) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO current_live_status (
@@ -268,7 +271,7 @@ def update_live_status(
             last_checked_at,
             last_live_at
         )
-        VALUES (?, 'youtube', 1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, 'youtube', 1, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(vtuber_id, platform) DO UPDATE SET
             is_live = 1,
             stream_id = excluded.stream_id,
@@ -276,8 +279,8 @@ def update_live_status(
             stream_url = excluded.stream_url,
             title = excluded.title,
             started_at = excluded.started_at,
-            last_checked_at = CURRENT_TIMESTAMP,
-            last_live_at = CURRENT_TIMESTAMP
+            last_checked_at = excluded.last_checked_at,
+            last_live_at = excluded.last_live_at
         """,
         (
             streamer.vtuber_id,
@@ -286,11 +289,14 @@ def update_live_status(
             live.stream_url,
             live.title,
             live.started_at,
+            current_time,
+            current_time,
         ),
     )
 
 
 def update_offline_status(conn: sqlite3.Connection, streamer: Streamer) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO current_live_status (
@@ -299,12 +305,12 @@ def update_offline_status(conn: sqlite3.Connection, streamer: Streamer) -> None:
             is_live,
             last_checked_at
         )
-        VALUES (?, 'youtube', 0, CURRENT_TIMESTAMP)
+        VALUES (?, 'youtube', 0, ?)
         ON CONFLICT(vtuber_id, platform) DO UPDATE SET
             is_live = 0,
-            last_checked_at = CURRENT_TIMESTAMP
+            last_checked_at = excluded.last_checked_at
         """,
-        (streamer.vtuber_id,),
+        (streamer.vtuber_id, current_time),
     )
 
 
