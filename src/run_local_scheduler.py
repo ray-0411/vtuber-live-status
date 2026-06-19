@@ -102,35 +102,23 @@ def read_current_lives(database: str) -> list[LiveStatusRow]:
 
 def print_live_report(database: str) -> None:
     lives = read_current_lives(database)
-    counts = {
-        "youtube": sum(1 for live in lives if live.platform == "youtube"),
-        "twitch": sum(1 for live in lives if live.platform == "twitch"),
+    by_platform = {
+        "youtube": [live for live in lives if live.platform == "youtube"],
+        "twitch": [live for live in lives if live.platform == "twitch"],
     }
 
-    print(
-        "current live: youtube={youtube} twitch={twitch} total={total}".format(
-            youtube=counts["youtube"],
-            twitch=counts["twitch"],
-            total=len(lives),
-        ),
-        flush=True,
-    )
+    print("", flush=True)
+    for platform, platform_lives in by_platform.items():
+        print(f"{platform.upper()} live: {len(platform_lives)}", flush=True)
+        if not platform_lives:
+            print("- none", flush=True)
+            continue
 
-    if not lives:
-        print("current live list: none", flush=True)
-        return
+        for live in platform_lives:
+            viewer_text = "unknown" if live.viewer_count is None else str(live.viewer_count)
+            print(f"- {live.name}: {viewer_text}", flush=True)
 
-    print("current live list:", flush=True)
-    for live in lives:
-        viewer_text = "unknown" if live.viewer_count is None else str(live.viewer_count)
-        title_text = live.title or "(no title)"
-        print(
-            f"- [{live.platform}] {live.name} ({live.vtuber_id}) "
-            f"viewers={viewer_text} title={title_text}",
-            flush=True,
-        )
-        if live.stream_url:
-            print(f"  {live.stream_url}", flush=True)
+    print(f"TOTAL live now: {len(lives)}", flush=True)
 
 
 def run_once(database: str, config_database: str, timezone_name: str) -> int:
