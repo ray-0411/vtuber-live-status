@@ -45,12 +45,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase
           git add live_data.db streamer_config.db
           git status --short
           if git diff --cached --quiet; then
             echo "No database changes to commit."
           else
             git commit -m "Update live status database"
+            git pull --rebase --autostash
             git push
           fi
