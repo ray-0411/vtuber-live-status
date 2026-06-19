@@ -232,6 +232,7 @@ def update_live_status(
     stream_id: int,
     stream: TwitchStream,
 ) -> None:
+    current_time = now_db_time()
     conn.execute(
         """
         INSERT INTO current_live_status (
