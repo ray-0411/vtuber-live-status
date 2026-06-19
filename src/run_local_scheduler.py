@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import time
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from collect_all import DEFAULT_CONFIG_DATABASE, DEFAULT_DATABASE, collect_all
@@ -27,6 +29,16 @@ DEFAULT_INTERVAL_SECONDS = 300
 DEFAULT_TIMEZONE = "Asia/Taipei"
 
 
+@dataclass(frozen=True)
+class LiveStatusRow:
+    platform: str
+    vtuber_id: str
+    name: str
+    viewer_count: int | None
+    title: str | None
+    stream_url: str | None
+
+
 def configure_output_encoding() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -37,10 +49,88 @@ def now_text(timezone_name: str) -> str:
     return datetime.now(ZoneInfo(timezone_name)).isoformat(timespec="seconds")
 
 
+def next_run_time(timezone_name: str, interval_seconds: int) -> datetime:
+    zone = ZoneInfo(timezone_name)
+    now = datetime.now(zone)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed_seconds = (now - day_start).total_seconds()
+    next_elapsed = ((int(elapsed_seconds) // interval_seconds) + 1) * interval_seconds
+    return day_start + timedelta(seconds=next_elapsed)
+
+
+def seconds_until(target: datetime) -> float:
+    return max(0.0, (target - datetime.now(target.tzinfo)).total_seconds())
+
+
 def initialize_databases(database: str, config_database: str) -> None:
     init_database(database)
     for group in DEFAULT_GROUPS:
         create_streamer_group(config_database, group)
+
+
+def read_current_lives(database: str) -> list[LiveStatusRow]:
+    with sqlite3.connect(database) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                current_live_status.platform,
+                current_live_status.vtuber_id,
+                streamer.name,
+                current_live_status.viewer_count,
+                current_live_status.title,
+                current_live_status.stream_url
+            FROM current_live_status
+            JOIN streamer
+              ON streamer.vtuber_id = current_live_status.vtuber_id
+            WHERE current_live_status.is_live = 1
+            ORDER BY current_live_status.platform, streamer.group_name, streamer.display_order
+            """
+        ).fetchall()
+
+    return [
+        LiveStatusRow(
+            platform=row[0],
+            vtuber_id=row[1],
+            name=row[2],
+            viewer_count=row[3],
+            title=row[4],
+            stream_url=row[5],
+        )
+        for row in rows
+    ]
+
+
+def print_live_report(database: str) -> None:
+    lives = read_current_lives(database)
+    counts = {
+        "youtube": sum(1 for live in lives if live.platform == "youtube"),
+        "twitch": sum(1 for live in lives if live.platform == "twitch"),
+    }
+
+    print(
+        "current live: youtube={youtube} twitch={twitch} total={total}".format(
+            youtube=counts["youtube"],
+            twitch=counts["twitch"],
+            total=len(lives),
+        ),
+        flush=True,
+    )
+
+    if not lives:
+        print("current live list: none", flush=True)
+        return
+
+    print("current live list:", flush=True)
+    for live in lives:
+        viewer_text = "unknown" if live.viewer_count is None else str(live.viewer_count)
+        title_text = live.title or "(no title)"
+        print(
+            f"- [{live.platform}] {live.name} ({live.vtuber_id}) "
+            f"viewers={viewer_text} title={title_text}",
+            flush=True,
+        )
+        if live.stream_url:
+            print(f"  {live.stream_url}", flush=True)
 
 
 def run_once(database: str, config_database: str, timezone_name: str) -> int:
@@ -69,6 +159,7 @@ def run_once(database: str, config_database: str, timezone_name: str) -> int:
     if summary["errors"]:
         print(json.dumps(summary["errors"], ensure_ascii=False, indent=2), file=sys.stderr)
 
+    print_live_report(database)
     return 0 if summary["status"] in {"success", "partial_success"} else 1
 
 
@@ -82,6 +173,11 @@ def main() -> int:
     parser.add_argument("--timezone", default=DEFAULT_TIMEZONE)
     parser.add_argument("--once", action="store_true", help="Run one collection and exit.")
     parser.add_argument(
+        "--run-immediately",
+        action="store_true",
+        help="Run once immediately, then continue on the aligned schedule.",
+    )
+    parser.add_argument(
         "--skip-init",
         action="store_true",
         help="Do not initialize database schemas before collecting.",
@@ -94,33 +190,45 @@ def main() -> int:
     if not args.skip_init:
         initialize_databases(args.database, args.config_database)
 
+    print(
+        f"[{now_text(args.timezone)}] scheduler timezone={args.timezone} "
+        f"interval_seconds={args.interval_seconds} aligned=true",
+        flush=True,
+    )
+
     exit_code = 0
+    should_run_now = args.once or args.run_immediately
     while True:
-        try:
-            exit_code = max(exit_code, run_once(args.database, args.config_database, args.timezone))
-        except KeyboardInterrupt:
-            print(f"[{now_text(args.timezone)}] stopped by user", flush=True)
-            return exit_code
-        except Exception as exc:
-            exit_code = 1
-            print(
-                f"[{now_text(args.timezone)}] collect failed {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-                flush=True,
-            )
+        if should_run_now:
+            try:
+                exit_code = max(exit_code, run_once(args.database, args.config_database, args.timezone))
+            except KeyboardInterrupt:
+                print(f"[{now_text(args.timezone)}] stopped by user", flush=True)
+                return exit_code
+            except Exception as exc:
+                exit_code = 1
+                print(
+                    f"[{now_text(args.timezone)}] collect failed {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
-        if args.once:
-            return exit_code
+            if args.once:
+                return exit_code
 
+        target = next_run_time(args.timezone, args.interval_seconds)
+        sleep_seconds = seconds_until(target)
         print(
-            f"[{now_text(args.timezone)}] sleep {args.interval_seconds} seconds",
+            f"[{now_text(args.timezone)}] next run at "
+            f"{target.isoformat(timespec='seconds')} sleep {sleep_seconds:.0f} seconds",
             flush=True,
         )
         try:
-            time.sleep(args.interval_seconds)
+            time.sleep(sleep_seconds)
         except KeyboardInterrupt:
             print(f"[{now_text(args.timezone)}] stopped by user", flush=True)
             return exit_code
+        should_run_now = True
 
 
 if __name__ == "__main__":

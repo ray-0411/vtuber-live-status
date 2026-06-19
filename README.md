@@ -48,8 +48,10 @@ python src/run_local_scheduler.py
 
 預設行為：
 
-- 每 300 秒執行一次。
+- 固定使用 `Asia/Taipei` 顯示時間。
+- 對齊每小時的 `00`、`05`、`10`、`15` 分執行。
 - 每輪會呼叫 `collect_all.py` 的相同流程。
+- 每輪結束會列出目前 YouTube / Twitch 各有幾個直播，以及直播清單。
 - 會先確認 `live_data.db` 與 `streamer_config.db` 的必要資料表存在。
 - 按 `Ctrl+C` 可以停止。
 
@@ -63,6 +65,12 @@ python src/run_local_scheduler.py --once
 
 ```powershell
 python src/run_local_scheduler.py --interval-seconds 600
+```
+
+如果希望啟動後先立刻跑一次，再等待下一個對齊時間：
+
+```powershell
+python src/run_local_scheduler.py --run-immediately
 ```
 
 ## 預計執行環境

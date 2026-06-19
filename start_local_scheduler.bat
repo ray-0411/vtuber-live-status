@@ -19,10 +19,11 @@ if not defined TWITCH_CLIENT_SECRET (
 
 echo Starting local live-status scheduler...
 echo Project: %CD%
-echo Interval: 300 seconds
+echo Timezone: Asia/Taipei
+echo Schedule: every hour at minute 00, 05, 10, 15, ...
 echo.
 
-python src\run_local_scheduler.py --interval-seconds 300
+python src\run_local_scheduler.py --interval-seconds 300 --timezone Asia/Taipei
 
 echo.
 echo Scheduler stopped.
