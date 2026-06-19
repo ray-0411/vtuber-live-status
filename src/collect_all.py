@@ -60,7 +60,11 @@ def collect_all(database: str, config_database: str) -> dict[str, Any]:
         errors.append("twitch: missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET")
 
     try:
-        results["youtube"] = collect_youtube(database)
+        results["youtube"] = collect_youtube(
+            database,
+            debug=os.environ.get("YOUTUBE_COLLECTOR_DEBUG", "").lower()
+            in {"1", "true", "yes", "on"},
+        )
     except Exception as exc:
         errors.append(f"youtube: {type(exc).__name__}: {exc}")
 
