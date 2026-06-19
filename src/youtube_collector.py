@@ -28,15 +28,20 @@ DEFAULT_DATABASE = "live_data.db"
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"(?:v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{11})")
 
 
-class QuietLogger:
+class YtDlpLogger:
+    def __init__(self, debug_enabled: bool = False) -> None:
+        self.debug_enabled = debug_enabled
+
     def debug(self, message: str) -> None:
         pass
 
     def warning(self, message: str) -> None:
-        pass
+        if self.debug_enabled:
+            print(f"yt-dlp warning: {message}", file=sys.stderr)
 
     def error(self, message: str) -> None:
-        pass
+        if self.debug_enabled:
+            print(f"yt-dlp error: {message}", file=sys.stderr)
 
 
 @dataclass(frozen=True)
@@ -122,10 +127,10 @@ def unix_timestamp_to_iso(value: Any) -> str | None:
 def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResult | None:
     ydl_opts = {
         "quiet": True,
-        "no_warnings": True,
+        "no_warnings": not debug,
         "skip_download": True,
-        "ignoreerrors": True,
-        "logger": QuietLogger(),
+        "ignoreerrors": False,
+        "logger": YtDlpLogger(debug),
     }
 
     url = f"{channel_url.rstrip('/')}/live"
