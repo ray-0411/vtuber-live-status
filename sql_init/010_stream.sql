@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS stream (
+    stream_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vtuber_id TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
+    platform_stream_id TEXT NOT NULL,
+    stream_url TEXT,
+    title TEXT,
+    category TEXT,
+    tags TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (platform, platform_stream_id)
+);
