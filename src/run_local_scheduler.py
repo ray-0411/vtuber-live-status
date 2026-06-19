@@ -11,10 +11,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sqlite3
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -121,6 +121,32 @@ def print_live_report(database: str) -> None:
     print(f"TOTAL live now: {len(lives)}", flush=True)
 
 
+def print_error_report(summary: dict[str, object]) -> None:
+    errors: list[str] = []
+
+    top_level_errors = summary.get("errors", [])
+    if isinstance(top_level_errors, list):
+        errors.extend(str(error) for error in top_level_errors)
+
+    results = summary.get("results", {})
+    if isinstance(results, dict):
+        for platform, result in results.items():
+            if not isinstance(result, dict):
+                continue
+            platform_errors = result.get("errors", [])
+            if isinstance(platform_errors, list):
+                errors.extend(f"{platform}: {error}" for error in platform_errors)
+
+    print("", flush=True)
+    if not errors:
+        print("ERRORS: none", flush=True)
+        return
+
+    print(f"ERRORS: {len(errors)}", flush=True)
+    for error in errors:
+        print(f"- {error}", flush=True)
+
+
 def run_once(database: str, config_database: str, timezone_name: str) -> int:
     started = time.perf_counter()
     print(f"[{now_text(timezone_name)}] collect start", flush=True)
@@ -144,10 +170,8 @@ def run_once(database: str, config_database: str, timezone_name: str) -> int:
         flush=True,
     )
 
-    if summary["errors"]:
-        print(json.dumps(summary["errors"], ensure_ascii=False, indent=2), file=sys.stderr)
-
     print_live_report(database)
+    print_error_report(summary)
     return 0 if summary["status"] in {"success", "partial_success"} else 1
 
 
@@ -200,6 +224,7 @@ def main() -> int:
                     file=sys.stderr,
                     flush=True,
                 )
+                traceback.print_exc()
 
             if args.once:
                 return exit_code
