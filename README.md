@@ -40,6 +40,12 @@ $env:TWITCH_CLIENT_SECRET="你的 Twitch Client Secret"
 python src/run_local_scheduler.py
 ```
 
+也可以直接執行專案根目錄的 bat 檔：
+
+```powershell
+.\start_local_scheduler.bat
+```
+
 預設行為：
 
 - 每 300 秒執行一次。
