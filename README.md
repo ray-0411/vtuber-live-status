@@ -56,6 +56,12 @@ python src/run_local_scheduler.py
 .\start_local_scheduler.bat
 ```
 
+如果只想手動抓一次，不進入循環：
+
+```powershell
+.\run_collect_once.bat
+```
+
 預設行為：
 
 - 固定使用 `Asia/Taipei` 顯示時間。
