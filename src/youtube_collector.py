@@ -9,6 +9,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 import sqlite3
 import sys
@@ -52,6 +54,32 @@ def configure_output_encoding() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def debug_payload(info: dict[str, Any] | None) -> str:
+    if not info:
+        return "<no info>"
+    payload = {
+        "id": info.get("id"),
+        "title": info.get("title"),
+        "is_live": info.get("is_live"),
+        "live_status": info.get("live_status"),
+        "webpage_url": info.get("webpage_url"),
+        "url": info.get("url"),
+        "concurrent_view_count": info.get("concurrent_view_count"),
+        "release_timestamp": info.get("release_timestamp"),
+        "timestamp": info.get("timestamp"),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def debug_log(enabled: bool, message: str) -> None:
+    if enabled:
+        print(message, file=sys.stderr)
+
+
 def get_youtube_streamers(conn: sqlite3.Connection) -> list[Streamer]:
     return [
         streamer
@@ -91,7 +119,7 @@ def unix_timestamp_to_iso(value: Any) -> str | None:
         return None
 
 
-def fetch_youtube_live(channel_url: str) -> YouTubeLiveResult | None:
+def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResult | None:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -104,18 +132,26 @@ def fetch_youtube_live(channel_url: str) -> YouTubeLiveResult | None:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
-        except yt_dlp.utils.DownloadError:
+        except yt_dlp.utils.DownloadError as exc:
+            debug_log(debug, f"yt-dlp download error for {url}: {type(exc).__name__}: {exc}")
             return None
+        except Exception as exc:
+            debug_log(debug, f"yt-dlp unexpected error for {url}: {type(exc).__name__}: {exc}")
+            return None
+
+    debug_log(debug, f"yt-dlp raw info for {url}: {debug_payload(info)}")
 
     if not info or not is_live_info(info):
         return None
 
     stream_url = normalize_video_url(info)
     if not stream_url:
+        debug_log(debug, f"yt-dlp live info missing url for {url}")
         return None
 
     platform_stream_id = extract_video_id(stream_url, fallback=info.get("id"))
     if not platform_stream_id:
+        debug_log(debug, f"yt-dlp live info missing video id for {url}")
         return None
 
     viewer_count = info.get("concurrent_view_count")
@@ -267,7 +303,7 @@ def update_offline_status(conn: sqlite3.Connection, streamer: Streamer) -> None:
     )
 
 
-def collect_youtube(database: str) -> dict[str, Any]:
+def collect_youtube(database: str, debug: bool = False) -> dict[str, Any]:
     started = time.perf_counter()
     working_id: int | None = None
 
@@ -284,8 +320,12 @@ def collect_youtube(database: str) -> dict[str, Any]:
         with sqlite3.connect(database) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             for streamer in streamers:
+                debug_log(
+                    debug,
+                    f"checking {streamer.vtuber_id} {streamer.youtube_url}",
+                )
                 try:
-                    live = fetch_youtube_live(streamer.youtube_url or "")
+                    live = fetch_youtube_live(streamer.youtube_url or "", debug=debug)
                 except Exception as exc:
                     errors.append(f"{streamer.vtuber_id}: {type(exc).__name__}: {exc}")
                     update_offline_status(conn, streamer)
@@ -295,6 +335,13 @@ def collect_youtube(database: str) -> dict[str, Any]:
                     update_offline_status(conn, streamer)
                     continue
 
+                debug_log(
+                    debug,
+                    f"live {streamer.vtuber_id} "
+                    f"stream_id={live.platform_stream_id} "
+                    f"viewer_count={live.viewer_count} "
+                    f"title={live.title!r}",
+                )
                 stream_id = upsert_stream(conn, streamer, live)
                 if insert_snapshot(conn, stream_id, streamer, live):
                     snapshots_inserted += 1
@@ -344,9 +391,14 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Collect YouTube live status.")
     parser.add_argument("--database", default=DEFAULT_DATABASE)
+    parser.add_argument("--debug", action="store_true", help="Print yt-dlp response details.")
     args = parser.parse_args()
 
-    summary = collect_youtube(args.database)
+    debug = args.debug or env_truthy("YOUTUBE_COLLECTOR_DEBUG")
+    if debug:
+        print("YouTube collector debug mode enabled", file=sys.stderr)
+
+    summary = collect_youtube(args.database, debug=debug)
     print(
         "checked={checked} live={live} offline={offline} "
         "snapshots_inserted={snapshots_inserted} errors={error_count} "
