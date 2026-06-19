@@ -23,6 +23,42 @@
 
 後續可以依照實際穩定性、API 限制與 YouTube 抓取速度再調整。
 
+## 本機每 5 分鐘執行
+
+如果 GitHub Actions 上的 YouTube 抓取受到限制，可以先在本機用長駐程式每 5 分鐘執行一次完整抓取。
+
+執行前先設定 Twitch API 環境變數：
+
+```powershell
+$env:TWITCH_CLIENT_ID="你的 Twitch Client ID"
+$env:TWITCH_CLIENT_SECRET="你的 Twitch Client Secret"
+```
+
+啟動本機排程：
+
+```powershell
+python src/run_local_scheduler.py
+```
+
+預設行為：
+
+- 每 300 秒執行一次。
+- 每輪會呼叫 `collect_all.py` 的相同流程。
+- 會先確認 `live_data.db` 與 `streamer_config.db` 的必要資料表存在。
+- 按 `Ctrl+C` 可以停止。
+
+測試只跑一次：
+
+```powershell
+python src/run_local_scheduler.py --once
+```
+
+修改執行間隔：
+
+```powershell
+python src/run_local_scheduler.py --interval-seconds 600
+```
+
 ## 預計執行環境
 
 目標執行環境：
