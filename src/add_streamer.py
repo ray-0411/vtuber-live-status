@@ -14,6 +14,7 @@ import sys
 
 from streamer_tables import table_name_for_group
 from time_utils import now_db_time
+from youtube_utils import fetch_youtube_channel_id
 
 
 DEFAULT_DATABASE = "streamer_config.db"
@@ -103,6 +104,11 @@ def main() -> int:
     parser.add_argument("--database", default=DEFAULT_DATABASE)
     parser.add_argument("--youtube-url")
     parser.add_argument("--youtube-channel-id")
+    parser.add_argument(
+        "--no-auto-youtube-channel-id",
+        action="store_true",
+        help="Do not fetch youtube_channel_id from --youtube-url automatically.",
+    )
     parser.add_argument("--twitch-url")
     parser.add_argument("--twitch-login")
     parser.add_argument("--disabled", action="store_true", help="Insert as enabled = 0.")
@@ -110,13 +116,23 @@ def main() -> int:
     parser.add_argument("--note")
     args = parser.parse_args()
 
+    youtube_channel_id = args.youtube_channel_id
+    if args.youtube_url and not youtube_channel_id and not args.no_auto_youtube_channel_id:
+        try:
+            youtube_channel_id = fetch_youtube_channel_id(args.youtube_url)
+        except Exception as exc:
+            print(
+                f"warning: failed to fetch youtube_channel_id: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+
     table_name = add_streamer(
         database=args.database,
         group_name=args.group_name,
         vtuber_id=args.vtuber_id,
         name=args.name,
         youtube_url=args.youtube_url,
-        youtube_channel_id=args.youtube_channel_id,
+        youtube_channel_id=youtube_channel_id,
         twitch_url=args.twitch_url,
         twitch_login=args.twitch_login,
         enabled=0 if args.disabled else 1,
@@ -125,6 +141,8 @@ def main() -> int:
     )
 
     print(f"Added or updated {args.vtuber_id} in {table_name}")
+    if youtube_channel_id:
+        print(f"youtube_channel_id={youtube_channel_id}")
     return 0
 
 

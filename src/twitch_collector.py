@@ -139,6 +139,42 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchSt
     tags_json = json.dumps(stream.tags, ensure_ascii=False)
     current_time = now_db_time()
 
+    row = conn.execute(
+        """
+        SELECT stream_id
+        FROM stream
+        WHERE platform = 'twitch'
+          AND platform_stream_id = ?
+        """,
+        (stream.platform_stream_id,),
+    ).fetchone()
+    if row is not None:
+        stream_id = int(row[0])
+        conn.execute(
+            """
+            UPDATE stream
+            SET stream_url = ?,
+                title = ?,
+                category = ?,
+                tags = ?,
+                started_at = ?,
+                last_seen_at = ?,
+                updated_at = ?
+            WHERE stream_id = ?
+            """,
+            (
+                stream_url,
+                stream.title,
+                stream.category,
+                tags_json,
+                stream.started_at,
+                current_time,
+                current_time,
+                stream_id,
+            ),
+        )
+        return stream_id
+
     conn.execute(
         """
         INSERT INTO stream (
@@ -156,14 +192,6 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchSt
             updated_at
         )
         VALUES (?, 'twitch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(platform, platform_stream_id) DO UPDATE SET
-            stream_url = excluded.stream_url,
-            title = excluded.title,
-            category = excluded.category,
-            tags = excluded.tags,
-            started_at = excluded.started_at,
-            last_seen_at = excluded.last_seen_at,
-            updated_at = excluded.updated_at
         """,
         (
             streamer.vtuber_id,
@@ -179,18 +207,7 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, stream: TwitchSt
             current_time,
         ),
     )
-    row = conn.execute(
-        """
-        SELECT stream_id
-        FROM stream
-        WHERE platform = 'twitch'
-          AND platform_stream_id = ?
-        """,
-        (stream.platform_stream_id,),
-    ).fetchone()
-    if row is None:
-        raise RuntimeError(f"Failed to find stream row: {stream.platform_stream_id}")
-    return int(row[0])
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
 def insert_snapshot(

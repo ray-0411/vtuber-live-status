@@ -62,6 +62,12 @@ python src/run_local_scheduler.py
 .\run_collect_once.bat
 ```
 
+如果想用表單新增或更新 streamer：
+
+```powershell
+.\open_streamer_form.bat
+```
+
 預設行為：
 
 - 固定使用 `Asia/Taipei` 顯示時間。
@@ -235,6 +241,8 @@ CREATE TABLE streamer_group_name (
 - `vtuber_id` 必須全資料庫唯一，即使分散在不同團體表也不能重複。
 - `youtube_url` 和 `twitch_url` 主要方便人工查看與維護。
 - `youtube_channel_id` 和 `twitch_login` 主要給程式穩定查詢。
+- `youtube_channel_id` 可以由 `add_streamer.py` 或 `backfill_youtube_channel_ids.py` 透過 yt-dlp 自動補上。
+- `twitch_login` 可以由新增表單從 Twitch URL 自動解析。
 - 沒有 YouTube 或 Twitch 的 VTuber，對應欄位可以留空。
 - 若 VTuber 暫停追蹤，不要刪除資料，改將 `enabled` 設為 `0`。
 - collector 不直接讀取 `streamer_config.db`，而是讀取同步後的 `live_data.db.streamer`。
@@ -318,6 +326,8 @@ CREATE TABLE stream (
 - YouTube 可以使用 video id。
 - Twitch 可以使用 Helix API 回傳的 stream id。
 - `title`、`category`、`tags` 可能在直播中改變，所以 `stream` 表只保存目前已知的最新狀態。
+- collector 會先查 `(platform, platform_stream_id)` 是否已存在；已存在就更新，不存在才新增，避免同一場直播重複抓取時消耗新的 `stream_id`。
+- `stream_id` 是內部唯一 ID，不保證歷史資料完全連續；如果舊版本已經消耗過流水號，中間仍可能有缺號。
 
 ### stream_snapshot
 
@@ -604,11 +614,15 @@ src/init_db.py
 src/init_streamer_config.py
 src/create_streamer_group.py
 src/add_streamer.py
+src/streamer_form.py
 src/list_streamers.py
 src/sync_streamers.py
+src/backfill_youtube_channel_ids.py
 src/twitch_collector.py
 src/youtube_collector.py
 src/collect_all.py
+src/youtube_utils.py
+src/twitch_utils.py
 ```
 
 ### init_db.py
@@ -729,6 +743,41 @@ python src/add_streamer.py meridian rei "澪Rei" `
   --twitch-login "reirei_neon"
 ```
 
+補充：
+
+- 如果有提供 `--youtube-url` 但沒有提供 `--youtube-channel-id`，程式會嘗試用 yt-dlp 自動抓 YouTube channel id。
+- 如果不想自動抓 YouTube channel id，可以加上 `--no-auto-youtube-channel-id`。
+- CLI 版不會自動從 Twitch URL 補 `twitch_login`；表單工具會自動補。
+
+### streamer_form.py
+
+用途：
+
+```text
+開啟本機表單，方便新增或更新 streamer_config.db 裡的 VTuber。
+```
+
+使用方式：
+
+```powershell
+python src/streamer_form.py
+```
+
+也可以直接雙擊：
+
+```text
+open_streamer_form.bat
+```
+
+表單功能：
+
+- 選擇或建立 streamer group。
+- 填寫 `vtuber_id`、顯示名稱、YouTube URL、Twitch URL、排序與備註。
+- 按 `Auto fetch` 可以從 YouTube URL 自動抓 `youtube_channel_id`。
+- 貼上 Twitch URL 時，若 `Twitch login` 欄位是空的，會自動解析 login。
+- 儲存時會寫入 `streamer_config.db`。
+- `Sync to live_data.db after save` 預設不勾選；平常執行 `collect_all.py` 前會自動同步。
+
 ### list_streamers.py
 
 用途：
@@ -774,6 +823,33 @@ python src/sync_streamers.py --config-database streamer_config.db --live-databas
 - 同步時會檢查 `vtuber_id` 是否重複。
 - 同步時會重建 `live_data.db.streamer` 的內容。
 - collector 只讀同步後的 `live_data.db.streamer`。
+- `collect_all.py` 每次執行時會先呼叫同步，所以只更新 `streamer_config.db` 後，下一次收集前會自動帶到 `live_data.db`。
+
+### backfill_youtube_channel_ids.py
+
+用途：
+
+```text
+批次補齊 streamer_config.db 中缺少的 youtube_channel_id。
+```
+
+先試跑，不寫入資料庫：
+
+```powershell
+python src/backfill_youtube_channel_ids.py --dry-run
+```
+
+確認後寫入：
+
+```powershell
+python src/backfill_youtube_channel_ids.py
+```
+
+注意事項：
+
+- 會使用 yt-dlp 讀 YouTube metadata，因此需要網路。
+- 只處理有 `youtube_url` 且 `youtube_channel_id` 空白的資料。
+- 補完後，下次 `collect_all.py` 會同步到 `live_data.db`。
 
 ### twitch_collector.py
 
@@ -811,6 +887,12 @@ python src/twitch_collector.py
 已確認可以讀取 streamer 表，寫入 stream / stream_snapshot / current_live_status，並記錄 working 執行紀錄。
 ```
 
+補充：
+
+- Twitch 會使用 `twitch_login` 查詢 Helix API。
+- `stream.platform_stream_id` 使用 Twitch API 回傳的 stream id。
+- 同一個 Twitch stream id 已存在時，只更新原本的 `stream` row，不新增新的 `stream_id`。
+
 ### youtube_collector.py
 
 用途：
@@ -833,6 +915,36 @@ working
 ```powershell
 python src/youtube_collector.py
 ```
+
+補充：
+
+- 如果 streamer 有 `youtube_channel_id`，會優先使用 `https://www.youtube.com/channel/<channel_id>/live`。
+- 沒有 `youtube_channel_id` 時，才使用 `youtube_url` 加上 `/live` 查詢。
+- `platform_stream_id` 使用 YouTube video id。
+- YouTube 的 `started_at` 來自 yt-dlp / YouTube metadata，可能不是程式第一次看到直播的時間；分析時可搭配 `first_seen_at`。
+- DNS、timeout、connection refused/reset 等網路錯誤會記進 `errors`。如果全部 YouTube 檢查都失敗，`working.status` 會是 `failed`；部分失敗則是 `partial_success`。
+- 同一個 YouTube video id 已存在時，只更新原本的 `stream` row，不新增新的 `stream_id`。
+
+速度與穩定性測試紀錄：
+
+```text
+測試時間：2026-06-20
+測試頻道：雨海ルカ / WeatherPlanet
+原始 handle URL：https://www.youtube.com/@RukaCh.雨海ルカ/live
+channel id URL：https://www.youtube.com/channel/UClS3cnIUM9yzsBPQzeyX_8Q/live
+```
+
+5 次 yt-dlp 解析結果：
+
+```text
+原始 handle URL 平均約 1.916 秒，但解析到 UCkUARHuzG6cxtQwYJWp_ehA / Clippy Ch. (Ruka) - Videos，並非目標頻道。
+channel id URL 平均約 2.976 秒，正確解析到直播影片 Bnahh_qLQms，is_live=True，live_status=is_live。
+```
+
+結論：
+
+- 這次測試中 handle URL 看似較快，但其實解析錯頻道，因此不能視為有效速度比較。
+- `youtube_channel_id` URL 較適合作為 collector 查詢來源，原因是它能避免 handle / Unicode URL 被 yt-dlp 或 YouTube 解析錯。
 
 目前測試狀態：
 

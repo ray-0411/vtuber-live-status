@@ -23,10 +23,23 @@ import yt_dlp
 from streamer_tables import Streamer, read_live_streamers
 from time_utils import now_db_time, unix_to_db_time
 from working_log import fail_job, finish_job, start_job
+from youtube_utils import build_youtube_channel_url
 
 
 DEFAULT_DATABASE = "live_data.db"
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"(?:v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{11})")
+NETWORK_ERROR_PATTERNS = (
+    "getaddrinfo failed",
+    "failed to resolve",
+    "name resolution",
+    "temporary failure in name resolution",
+    "network is unreachable",
+    "no route to host",
+    "connection timed out",
+    "timed out",
+    "connection reset",
+    "connection refused",
+)
 
 
 class YtDlpLogger:
@@ -86,11 +99,16 @@ def debug_log(enabled: bool, message: str) -> None:
         print(message, file=sys.stderr)
 
 
+def is_network_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(pattern in message for pattern in NETWORK_ERROR_PATTERNS)
+
+
 def get_youtube_streamers(conn: sqlite3.Connection) -> list[Streamer]:
     return [
         streamer
         for streamer in read_live_streamers(conn, enabled_only=True)
-        if streamer.youtube_url
+        if streamer.youtube_url or streamer.youtube_channel_id
     ]
 
 
@@ -131,9 +149,13 @@ def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResu
             info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
             debug_log(debug, f"yt-dlp download error for {url}: {type(exc).__name__}: {exc}")
+            if is_network_error(exc):
+                raise
             return None
         except Exception as exc:
             debug_log(debug, f"yt-dlp unexpected error for {url}: {type(exc).__name__}: {exc}")
+            if is_network_error(exc):
+                raise
             return None
 
     debug_log(debug, f"yt-dlp raw info for {url}: {debug_payload(info)}")
@@ -169,6 +191,38 @@ def fetch_youtube_live(channel_url: str, debug: bool = False) -> YouTubeLiveResu
 
 def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiveResult) -> int:
     current_time = now_db_time()
+    row = conn.execute(
+        """
+        SELECT stream_id
+        FROM stream
+        WHERE platform = 'youtube'
+          AND platform_stream_id = ?
+        """,
+        (live.platform_stream_id,),
+    ).fetchone()
+    if row is not None:
+        stream_id = int(row[0])
+        conn.execute(
+            """
+            UPDATE stream
+            SET stream_url = ?,
+                title = ?,
+                started_at = ?,
+                last_seen_at = ?,
+                updated_at = ?
+            WHERE stream_id = ?
+            """,
+            (
+                live.stream_url,
+                live.title,
+                live.started_at,
+                current_time,
+                current_time,
+                stream_id,
+            ),
+        )
+        return stream_id
+
     conn.execute(
         """
         INSERT INTO stream (
@@ -184,12 +238,6 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiv
             updated_at
         )
         VALUES (?, 'youtube', ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(platform, platform_stream_id) DO UPDATE SET
-            stream_url = excluded.stream_url,
-            title = excluded.title,
-            started_at = excluded.started_at,
-            last_seen_at = excluded.last_seen_at,
-            updated_at = excluded.updated_at
         """,
         (
             streamer.vtuber_id,
@@ -203,18 +251,7 @@ def upsert_stream(conn: sqlite3.Connection, streamer: Streamer, live: YouTubeLiv
             current_time,
         ),
     )
-    row = conn.execute(
-        """
-        SELECT stream_id
-        FROM stream
-        WHERE platform = 'youtube'
-          AND platform_stream_id = ?
-        """,
-        (live.platform_stream_id,),
-    ).fetchone()
-    if row is None:
-        raise RuntimeError(f"Failed to find stream row: {live.platform_stream_id}")
-    return int(row[0])
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
 def insert_snapshot(
@@ -331,12 +368,16 @@ def collect_youtube(database: str, debug: bool = False) -> dict[str, Any]:
         with sqlite3.connect(database) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             for streamer in streamers:
+                youtube_channel_url = build_youtube_channel_url(
+                    streamer.youtube_url,
+                    streamer.youtube_channel_id,
+                )
                 debug_log(
                     debug,
-                    f"checking {streamer.vtuber_id} {streamer.youtube_url}",
+                    f"checking {streamer.vtuber_id} {youtube_channel_url}",
                 )
                 try:
-                    live = fetch_youtube_live(streamer.youtube_url or "", debug=debug)
+                    live = fetch_youtube_live(youtube_channel_url or "", debug=debug)
                 except Exception as exc:
                     errors.append(f"{streamer.vtuber_id}: {type(exc).__name__}: {exc}")
                     update_offline_status(conn, streamer)
@@ -360,19 +401,28 @@ def collect_youtube(database: str, debug: bool = False) -> dict[str, Any]:
                 live_count += 1
 
             elapsed = time.perf_counter() - started
+            successful_checks = len(streamers) - len(errors)
+            offline_count = successful_checks - live_count
             summary = {
                 "checked": len(streamers),
+                "successful_checks": successful_checks,
                 "live": live_count,
-                "offline": len(streamers) - live_count,
+                "offline": offline_count,
                 "snapshots_inserted": snapshots_inserted,
                 "errors": errors,
                 "elapsed_seconds": elapsed,
             }
             if working_id is not None:
+                if errors and successful_checks == 0:
+                    status = "failed"
+                elif errors:
+                    status = "partial_success"
+                else:
+                    status = "success"
                 finish_job(
                     conn,
                     working_id,
-                    status="partial_success" if errors else "success",
+                    status=status,
                     elapsed_seconds=elapsed,
                     checked_count=summary["checked"],
                     live_count=summary["live"],
