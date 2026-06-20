@@ -946,6 +946,86 @@ channel id URL 平均約 2.976 秒，正確解析到直播影片 Bnahh_qLQms，i
 - 這次測試中 handle URL 看似較快，但其實解析錯頻道，因此不能視為有效速度比較。
 - `youtube_channel_id` URL 較適合作為 collector 查詢來源，原因是它能避免 handle / Unicode URL 被 yt-dlp 或 YouTube 解析錯。
 
+YouTube.js / ytjs.dev 測試紀錄：
+
+```text
+測試時間：2026-06-21
+套件：youtubei.js 17.0.1
+用途：評估是否可取代 yt-dlp 查詢 YouTube live 狀態
+```
+
+同一批 20 個已有 `youtube_channel_id` 的頻道速度比較：
+
+```text
+yt-dlp 現有方式：
+20 人約 41.39 秒，平均約 2.07 秒 / 人
+
+YouTube.js 單線程：
+20 人約 7.32 秒，平均約 0.36 秒 / 人
+
+YouTube.js 5 workers：
+20 人約 1.80 秒
+```
+
+直播中頻道測試：
+
+```text
+channel_id：UCjmLYMFRI56fZteeYu7kkpg
+頻道：朧Oboro Channel
+直播影片：MFSU_BZxw3o
+
+YouTube.js：
+live tab 約 0.30 秒
+live tab + getInfo 約 0.85 秒
+basic_info.is_live = true
+primary_info.view_count.original_view_count = 139
+primary_info.view_count.view_count = "139 人正在觀看"
+
+yt-dlp：
+約 1.99 秒
+platform_stream_id = MFSU_BZxw3o
+viewer_count = 143
+```
+
+欄位判斷：
+
+- `basic_info.view_count` 不是即時觀看數，比較像累積觀看數或其他總量。
+- 即時觀看數可看 `primary_info.view_count.original_view_count`。
+- 直播判斷要看 `basic_info.is_live == true`。
+
+待機室測試：
+
+```text
+channel_id：UCbTv4OeHE9p1akLhKfgW8WQ
+頻道：澪Rei Channel
+待機室影片：tbYMJqon7is
+```
+
+YouTube.js 對待機室的欄位：
+
+```text
+basic_info.is_live = false
+basic_info.is_live_content = true
+duration = 0
+primary_info.view_count.original_view_count = 167
+primary_info.view_count.view_count = "167 位觀眾等待中"
+primary_info.view_count.is_live = true
+```
+
+yt-dlp 對同一頻道：
+
+```text
+live = None
+錯誤訊息：This live event will begin in 18 hours.
+```
+
+結論：
+
+- YouTube.js 查詢速度明顯快於 yt-dlp。
+- YouTube.js 可以抓到直播影片 ID、標題和即時觀看數。
+- 不能只用 `primary_info.view_count.is_live` 判斷直播，因為待機室也可能是 `true`。
+- 若未來改用 YouTube.js，判斷規則應以 `basic_info.is_live == true` 為主，並可額外排除觀看文字包含「等待中」的資料。
+
 目前測試狀態：
 
 ```text
