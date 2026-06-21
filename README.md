@@ -618,6 +618,8 @@ src/streamer_form.py
 src/list_streamers.py
 src/sync_streamers.py
 src/backfill_youtube_channel_ids.py
+src/list_working.py
+src/working_calendar.py
 src/twitch_collector.py
 src/youtube_collector.py
 src/collect_all.py
@@ -850,6 +852,76 @@ python src/backfill_youtube_channel_ids.py
 - 會使用 yt-dlp 讀 YouTube metadata，因此需要網路。
 - 只處理有 `youtube_url` 且 `youtube_channel_id` 空白的資料。
 - 補完後，下次 `collect_all.py` 會同步到 `live_data.db`。
+
+### list_working.py
+
+用途：
+
+```text
+用文字表格查看 working 表的最近執行狀態。
+```
+
+使用方式：
+
+```powershell
+python src/list_working.py
+```
+
+也可以直接雙擊：
+
+```text
+list_working.bat
+```
+
+常用查詢：
+
+```powershell
+python src/list_working.py --limit 50
+python src/list_working.py --job youtube_collector --errors
+python src/list_working.py --job twitch_collector --status failed --errors
+python src/list_working.py --since "2026-06-21 00:00:00"
+```
+
+顯示欄位：
+
+- `checked_count`：本次實際檢查幾個頻道。
+- `live_count`：本次判斷正在直播幾個頻道。
+- `offline_count`：本次判斷未直播幾個頻道。
+- `snapshots_inserted`：本次新增幾筆觀看人數快照。
+- `error_count`：本次錯誤數。
+- 加上 `--errors` 會把 `error_message` 印在每筆資料下面。
+
+### working_calendar.py
+
+用途：
+
+```text
+用簡單視窗日曆查看 working 表的每日執行狀態。
+```
+
+使用方式：
+
+```powershell
+python src/working_calendar.py
+```
+
+也可以直接雙擊：
+
+```text
+working_calendar.bat
+```
+
+畫面說明：
+
+- 左邊是月曆，每天用顏色表示狀態。
+- 綠色 `#a1ffa1`：完成度高、狀態正常。
+- 紅色 `#ff9797`：有 failed、partial_success 或錯誤。
+- 黃色 `#fff696`：缺少預期的 5 分鐘執行紀錄。
+- 藍色：仍在 running。
+- 右上會顯示當天 `collect_all` 的執行次數、成功次數、問題次數、第一筆/最後一筆時間與最大間隔。
+- 右上會分開顯示 YouTube 與 Twitch：各自檢查幾個、抓到幾個直播、幾個 offline、幾個錯誤。
+- 右下是 5 分鐘格子，點下去會顯示該輪 `collect_all`、`youtube_collector`、`twitch_collector` 的詳細數字。
+- 如果有錯誤，詳細區會分成 `COLLECT_ALL ERRORS`、`YOUTUBE ERRORS`、`TWITCH ERRORS`，方便確認是哪個平台出錯。
 
 ### twitch_collector.py
 
